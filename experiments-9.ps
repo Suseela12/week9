@@ -1,0 +1,119 @@
+!pip install -q -U google-genai pyyaml
+-------------------------------------------------------------------
+import json
+import yaml
+from google import genai
+from google.colab import userdata
+-------------------------------------------------------------------------
+API_KEY = userdata.get("GEMINI_API_KEY")
+client = genai.Client(api_key=API_KEY)
+
+MODEL = "gemini-3.8-flash"
+
+print("API configured successfully")
+--------------------------------------------------------------------------
+prompt = """
+Generate exactly 3 books as a JSON array.
+
+Each object must contain:
+"title": string,
+"author": string,
+"year": integer.
+
+Example:
+[
+  {"title": "1984", "author": "George Orwell", "year": 1949}
+]
+
+Output only valid JSON.
+Use double quotes and no trailing commas.
+Do not include markdown or explanations.
+"""
+-----------------------------------------------------------------------------------
+result = """
+[
+  {
+    "title": "1984",
+    "author": "George Orwell",
+    "year": 1949
+  },
+  {
+    "title": "Dune",
+    "author": "Frank Herbert",
+    "year": 1965
+  },
+  {
+    "title": "The Hobbit",
+    "author": "J.R.R. Tolkien",
+    "year": 1937
+  }
+]
+"""
+
+print(result)
+-----------------------------------------------------------------------------------
+required_keys = {"title", "author", "year"}
+
+def validate_json(text):
+    data = json.loads(text)
+
+    if not isinstance(data, list) or len(data) != 3:
+        raise ValueError("Expected exactly 3 book objects")
+
+    for book in data:
+        if not isinstance(book, dict) or not required_keys.issubset(book):
+            raise ValueError("Missing required book keys")
+
+        if not isinstance(book["title"], str):
+            raise ValueError("Title must be a string")
+
+        if not isinstance(book["author"], str):
+            raise ValueError("Author must be a string")
+
+        if not isinstance(book["year"], int) or isinstance(book["year"], bool):
+            raise ValueError("Year must be an integer")
+
+    return data
+
+
+try:
+    data = validate_json(result)
+
+except (json.JSONDecodeError, ValueError) as e:
+    print("Validation error:", e)
+
+    strict_prompt = prompt + """
+Return valid JSON only. No explanations, markdown, or extra text.
+Ensure exactly 3 objects with title, author, and year.
+"""
+
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=strict_prompt,
+        config={
+            "temperature": 0,
+            "response_mime_type": "application/json"
+        }
+    )
+
+    result = response.text
+
+    try:
+        data = validate_json(result)
+    except (json.JSONDecodeError, ValueError) as retry_error:
+        data = None
+        print("Retry failed:", retry_error)
+ ---------------------------------------------------------------------------------------
+ if data is not None:
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+else:
+    print("Could not generate valid JSON")
+    --------------------------------------------------------------------------------
+    if data is not None:
+    yaml_output = yaml.safe_dump(data, sort_keys=False)
+    yaml_data = yaml.safe_load(yaml_output)
+
+    print("YAML output:")
+    print(yaml_output)
+
+    print("YAML validation:", yaml_data == data)
